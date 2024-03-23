@@ -39,12 +39,12 @@ jobs:
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
 
       - name: Install Rust
-        # Or @nightly if you want
-        uses: dtolnay/rust-toolchain@stable
-        # Arguments to pass in
+        uses: actions-rs/toolchain@v1
         with:
           # Make Rust compile to our target (defined in the matrix)
-          targets: ${{ matrix.target }}
+          target: ${{ matrix.target }}
+          override: true
+          profile: minimal
 
       - name: Build
         uses: actions-rs/cargo@v1
