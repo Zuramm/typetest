@@ -25,7 +25,7 @@ jobs:
         #   - build: macos
         #     os: macos-latest
         #     target: x86_64-apple-darwin
-        #
+        
           - build: windows-gnu
             os: windows-latest
             target: x86_64-pc-windows-gnu
@@ -41,6 +41,7 @@ jobs:
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
+          toolchain: stable
           # Make Rust compile to our target (defined in the matrix)
           target: ${{ matrix.target }}
           override: true
