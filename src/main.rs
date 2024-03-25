@@ -86,6 +86,48 @@ impl TestResult {
     fn accuracy(&self) -> f64 {
         self.correct as f64 / self.keys.len() as f64
     }
+
+    fn keypresses_each_second(&self) -> Vec<usize> {
+        match self.keys.first() {
+            Some(first) => {
+                let mut history = Vec::<usize>::new();
+                let mut start = first.0;
+                let mut count = 0;
+
+                for (time, _char) in self.keys.iter().skip(1) {
+                    let time = *time;
+                    if (time - start).as_secs_f64() > 1.0 {
+                        history.push(count);
+                        count = 0;
+                        start = time;
+                    } else {
+                        count += 1;
+                    }
+                }
+
+                history.push(count);
+
+                history
+            }
+            None => Vec::new(),
+        }
+    }
+
+    fn consistency(&self) -> f64 {
+        let history = self
+            .keypresses_each_second()
+            .iter()
+            .map(|count| (*count as f64) / 5.0)
+            .collect_vec();
+        let mean = history.iter().sum::<f64>() / (history.len() as f64);
+        let standard_deviation = history
+            .iter()
+            .map(|count| (*count - mean).powi(2))
+            .sum::<f64>()
+            / (history.len() as f64);
+
+        standard_deviation / mean
+    }
 }
 
 fn run_test(test: String) -> io::Result<TestResult> {
@@ -233,8 +275,15 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
+fn kogasa(value: f64) -> f64 {
+    100.0 * (1.0 - (value + value.powi(3) / 3.0 + value.powi(5) / 5.0).tanh())
+}
+
 fn print_result(result: &TestResult) {
+    println!("{:?}", result.keypresses_each_second());
+    println!("{}", result.consistency());
     println!("wpm: {:.2}", result.wpm());
     println!("accuracy: {:.2}%", result.accuracy() * 100.0);
+    println!("consistency: {:.2}%", kogasa(result.consistency()));
     println!();
 }
