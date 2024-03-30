@@ -28,7 +28,7 @@ In addition you can set minimum wpm (speed), accuracy or consistency. For exampl
 head -n 50 sets/bigrams | typetest --min-wpm 40 --min-accuracy 100 permutation -c 5 -r 2
 ```
 
->> (!) Note: The program has a bug on windows.
+> (!) Note: The program has a bug on windows.
 
 ## Download
 
@@ -39,6 +39,6 @@ You can find the precompiled linux, mac, and windows version in the repeases sec
 You can install typetest by cloning it and running `cargo install`
 
 ```sh
-git clone ...
+git clone git@github.com:Zuramm/typetest.git
 cargo install
 ```
