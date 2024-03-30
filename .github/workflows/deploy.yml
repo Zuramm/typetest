@@ -12,23 +12,7 @@ permissions:
 jobs:
   build-and-upload:
     name: Build and upload
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      matrix:
-        # You can add more, for any target you'd like!
-        include:
-        #   - build: linux
-        #     os: ubuntu-latest
-        #     target: x86_64-unknown-linux-musl
-  
-        #   - build: macos
-        #     os: macos-latest
-        #     target: x86_64-apple-darwin
-        
-          - build: windows-gnu
-            os: windows-latest
-            target: x86_64-pc-windows-gnu
+    runs-on: ubuntu
 
     steps:
       - name: Checkout
@@ -38,42 +22,20 @@ jobs:
         shell: bash
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
 
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          # Make Rust compile to our target (defined in the matrix)
-          target: ${{ matrix.target }}
-          override: true
-          profile: minimal
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
 
-      - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --verbose --release --target ${{ matrix.target }}
+      - name: Install Dependencies
+        run: flutter pub get
 
-      - name: Build archive
+      - name: Build apk
+        run: flutter build apk
+      
+      - name: archive
         shell: bash
         run: |
-          # Replace with the name of your binary
-          binary_name="typetest"
-
-          dirname="$binary_name-${{ env.VERSION }}-${{ matrix.target }}"
-          mkdir -p "$dirname"
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            mv "target/${{ matrix.target }}/release/$binary_name.exe" "$dirname"
-          else
-            mv "target/${{ matrix.target }}/release/$binary_name" "$dirname"
-          fi
-
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            7z a "$dirname.zip" "$dirname"
-            echo "ASSET=$dirname.zip" >> $GITHUB_ENV
-          else
-            tar -czf "$dirname.tar.gz" "$dirname"
-            echo "ASSET=$dirname.tar.gz" >> $GITHUB_ENV
-          fi
+          tar -czf "build.tar.gz" "build"
+          echo "ASSET=build.tar.gz" >> $GITHUB_ENV
 
       - name: Release
         uses: softprops/action-gh-release@v1
