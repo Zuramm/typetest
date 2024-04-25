@@ -194,10 +194,17 @@ fn run_test(test: String) -> io::Result<TestResult> {
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
+    /// Only proceed to the next test if the words per minute are at least the provided amount.
     #[arg(short = 'w', long)]
     min_wpm: Option<f64>,
+    /// Only proceed to the next test if the accuracy is at least the provided amount.
+    /// Values go from 0 to 100.
     #[arg(short = 'a', long)]
     min_accuracy: Option<f64>,
+    /// Only proceed to the next test if the consistency is at least the provided amount.
+    /// Values go from 0 to 100.
+    #[arg(short = 'c', long)]
+    min_consistency: Option<f64>,
 
     #[command(subcommand)]
     generate: GeneratorArgs,
@@ -244,6 +251,9 @@ fn main() -> io::Result<()> {
                 || cli
                     .min_accuracy
                     .map_or(false, |min| result.accuracy() < min / 100.0)
+                || cli
+                    .min_consistency
+                    .map_or(false, |min| result.consistency() < min / 100.0)
             {
                 result = run_test(result.test)?;
                 print_result(&result);
@@ -264,6 +274,9 @@ fn main() -> io::Result<()> {
                     || cli
                         .min_accuracy
                         .map_or(false, |min| result.accuracy() < min / 100.0)
+                    || cli
+                        .min_consistency
+                        .map_or(false, |min| result.consistency() < min / 100.0)
                 {
                     result = run_test(result.test)?;
                     print_result(&result);
