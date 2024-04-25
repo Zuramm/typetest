@@ -59,14 +59,14 @@ where
         .collect()
 }
 
-struct TestResult {
-    test: String,
+struct TestResult<'a> {
+    test: &'a str,
     keys: Vec<(Instant, char)>,
     correct: usize,
     incorrect: usize,
 }
 
-impl TestResult {
+impl<'a> TestResult<'a> {
     fn len(&self) -> Duration {
         if self.keys.len() == 0 {
             Duration::new(0, 0)
@@ -130,7 +130,7 @@ impl TestResult {
     }
 }
 
-fn run_test(test: String) -> io::Result<TestResult> {
+fn run_test<'a>(test: &'a str) -> io::Result<TestResult<'a>> {
     let test_style = Style::new().magenta();
     let correct_style = Style::new();
     let incorrect_style = Style::new().red().underlined();
@@ -242,49 +242,52 @@ fn main() -> io::Result<()> {
 
     match cli.generate {
         GeneratorArgs::Random { words } => loop {
+            let mut all_results = Vec::<TestResult>::new();
             let test = random(&mut rng, &set, words);
 
-            let mut result = run_test(test)?;
-            print_result(&result);
+            run_test_with_requirement(&test, &cli, &mut all_results)?;
 
-            while cli.min_wpm.map_or(false, |min| result.wpm() < min)
-                || cli
-                    .min_accuracy
-                    .map_or(false, |min| result.accuracy() < min / 100.0)
-                || cli
-                    .min_consistency
-                    .map_or(false, |min| result.consistency() < min / 100.0)
-            {
-                result = run_test(result.test)?;
-                print_result(&result);
-            }
+            print_final_result(all_results);
         },
         GeneratorArgs::Permutation {
             combination,
             repetition,
         } => {
+            let mut all_results = Vec::<TestResult>::new();
             let permutations = permutate(&mut rng, set.clone(), combination, repetition);
             let len = permutations.len();
-            for (i, test) in permutations.into_iter().enumerate() {
+            for (i, test) in permutations.iter().enumerate() {
                 println!("{} / {}", i + 1, len);
-                let mut result = run_test(test)?;
-                print_result(&result);
-
-                while cli.min_wpm.map_or(false, |min| result.wpm() < min)
-                    || cli
-                        .min_accuracy
-                        .map_or(false, |min| result.accuracy() < min / 100.0)
-                    || cli
-                        .min_consistency
-                        .map_or(false, |min| result.consistency() < min / 100.0)
-                {
-                    result = run_test(result.test)?;
-                    print_result(&result);
-                }
+                run_test_with_requirement(test, &cli, &mut all_results)?;
             }
+
+            print_final_result(all_results);
         }
     }
 
+    Ok(())
+}
+
+fn run_test_with_requirement<'a, 'b>(
+    test: &'a String,
+    cli: &'b Args,
+    all_results: &mut Vec<TestResult<'a>>,
+) -> Result<(), io::Error> {
+    let mut result = run_test(test)?;
+    print_result(&result);
+    while cli.min_wpm.map_or(false, |min| result.wpm() < min)
+        || cli
+            .min_accuracy
+            .map_or(false, |min| result.accuracy() < min / 100.0)
+        || cli
+            .min_consistency
+            .map_or(false, |min| result.consistency() < min / 100.0)
+    {
+        all_results.push(result);
+        result = run_test(test)?;
+        print_result(&result);
+    }
+    all_results.push(result);
     Ok(())
 }
 
@@ -292,9 +295,32 @@ fn kogasa(value: f64) -> f64 {
     100.0 * (1.0 - (value + value.powi(3) / 3.0 + value.powi(5) / 5.0).tanh())
 }
 
+fn print_final_result(all_results: Vec<TestResult<'_>>) {
+    println!("total tests: {}", all_results.len());
+    println!(
+        "average wpm: {:.2}",
+        all_results.iter().map(|result| result.wpm()).sum::<f64>() / all_results.len() as f64
+    );
+    println!(
+        "average accuracy: {:.2}%",
+        all_results
+            .iter()
+            .map(|result| result.accuracy())
+            .sum::<f64>()
+            * 100.0
+            / all_results.len() as f64
+    );
+    println!(
+        "average consistency: {:.2}%",
+        all_results
+            .iter()
+            .map(|result| kogasa(result.consistency()))
+            .sum::<f64>()
+            / all_results.len() as f64
+    );
+}
+
 fn print_result(result: &TestResult) {
-    println!("{:?}", result.keypresses_each_second());
-    println!("{}", result.consistency());
     println!("wpm: {:.2}", result.wpm());
     println!("accuracy: {:.2}%", result.accuracy() * 100.0);
     println!("consistency: {:.2}%", kogasa(result.consistency()));
