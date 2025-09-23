@@ -1,10 +1,10 @@
 use std::io::{self, Read, Write};
 use std::time::{Duration, Instant};
 
-use clap::{Parser, Subcommand};
+use clap::{command, Parser, Subcommand};
 use console::{Style, Term};
 use itertools::Itertools;
-use rand::seq::SliceRandom;
+use rand::seq::{IndexedRandom, SliceRandom};
 use rand::Rng;
 
 fn read_pipe() -> String {
@@ -136,7 +136,7 @@ fn run_test<'a>(test: &'a str) -> io::Result<TestResult<'a>> {
     let incorrect_style = Style::new().red().underlined();
 
     let mut term = Term::stdout();
-    write!(term, "{}", test_style.apply_to(test.clone()))?;
+    write!(term, "{}", test_style.apply_to(test))?;
     term.move_cursor_left(test.len())?;
 
     let mut i = 0;
@@ -226,7 +226,7 @@ enum GeneratorArgs {
 fn main() -> io::Result<()> {
     let cli = Args::parse();
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let set_string = read_pipe();
     let set = set_string
         .split('\n')
