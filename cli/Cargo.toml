@@ -1,7 +1,6 @@
 [package]
 name = "typetest-cli"
-version = "0.1.0"
-varsion.workspace = true
+version.workspace = true
 edition.workspace = true
 description.workspace = true
 
@@ -9,5 +8,6 @@ description.workspace = true
 clap = { version = "4.5.48", features = ["derive"] }
 console = "0.16.1"
 itertools = "0.14.0"
+logic = { version = "0.1.0", path = "../logic" }
 rand = "0.9.2"
 thiserror = "2.0.16"

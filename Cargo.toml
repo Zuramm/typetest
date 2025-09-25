@@ -3,6 +3,6 @@ resolver = "2"
 members = [ "cli", "logic"]
 
 [workspace.package]
-varsion = "0.1.0"
+version = "0.1.0"
 edition = "2021"
 description = "A mordern typing test application built with rust"

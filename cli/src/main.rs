@@ -1,11 +1,10 @@
 use std::io::{self, Read, Write};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use clap::{command, Parser, Subcommand};
 use console::{Style, Term};
 use itertools::Itertools;
-use rand::seq::{IndexedRandom, SliceRandom};
-use rand::Rng;
+use logic::{generator, Input, InputKind, RunningTest, TestResult};
 
 fn read_pipe() -> String {
     let stdin = io::stdin();
@@ -23,114 +22,7 @@ fn read_pipe() -> String {
     line
 }
 
-fn random<R>(rng: &mut R, words: &Vec<&str>, n: usize) -> String
-where
-    R: Rng + ?Sized,
-{
-    words
-        .choose_multiple(rng, n)
-        .cloned()
-        .intersperse(" ")
-        .collect()
-}
-
-fn permutate<R>(
-    rng: &mut R,
-    mut words: Vec<&str>,
-    combination: usize,
-    repetition: usize,
-) -> Vec<String>
-where
-    R: Rng + ?Sized,
-{
-    words.shuffle(rng);
-
-    words
-        .iter()
-        .chunks(combination)
-        .into_iter()
-        .map(|mut chunk| {
-            let mut test = chunk.join(" ");
-            test.push(' ');
-            test = test.repeat(repetition);
-            test.pop();
-            test
-        })
-        .collect()
-}
-
-struct TestResult<'a> {
-    test: &'a str,
-    keys: Vec<(Instant, char)>,
-    correct: usize,
-    incorrect: usize,
-}
-
-impl<'a> TestResult<'a> {
-    fn len(&self) -> Duration {
-        if self.keys.len() == 0 {
-            Duration::new(0, 0)
-        } else {
-            self.keys.last().unwrap().0 - self.keys.first().unwrap().0
-        }
-    }
-
-    fn cpm(&self) -> f64 {
-        self.keys.len() as f64 / (self.len().as_secs_f64() / 60.0)
-    }
-
-    fn wpm(&self) -> f64 {
-        self.cpm() / 5.0
-    }
-
-    fn accuracy(&self) -> f64 {
-        self.correct as f64 / self.keys.len() as f64
-    }
-
-    fn keypresses_each_second(&self) -> Vec<usize> {
-        match self.keys.first() {
-            Some(first) => {
-                let mut history = Vec::<usize>::new();
-                let mut start = first.0;
-                let mut count = 0;
-
-                for (time, _char) in self.keys.iter().skip(1) {
-                    let time = *time;
-                    if (time - start).as_secs_f64() > 1.0 {
-                        history.push(count);
-                        count = 0;
-                        start = time;
-                    } else {
-                        count += 1;
-                    }
-                }
-
-                history.push(count);
-
-                history
-            }
-            None => Vec::new(),
-        }
-    }
-
-    fn consistency(&self) -> f64 {
-        let history = self
-            .keypresses_each_second()
-            .iter()
-            .map(|count| (*count as f64) / 5.0)
-            .collect_vec();
-        let mean = history.iter().sum::<f64>() / (history.len() as f64);
-        let standard_deviation = history
-            .iter()
-            .map(|count| (*count - mean).powi(2))
-            .sum::<f64>()
-            / (history.len() as f64);
-
-        standard_deviation / mean
-    }
-}
-
-fn run_test<'a>(test: &'a str) -> io::Result<TestResult<'a>> {
+fn run_test(test: &str) -> io::Result<TestResult> {
     let test_style = Style::new().magenta();
     let correct_style = Style::new();
     let incorrect_style = Style::new().red().underlined();
@@ -139,10 +31,7 @@ fn run_test<'a>(test: &'a str) -> io::Result<TestResult<'a>> {
     write!(term, "{}", test_style.apply_to(test))?;
     term.move_cursor_left(test.len())?;
 
-    let mut i = 0;
-    let mut keys: Vec<(Instant, char)> = vec![];
-    let mut correct = 0;
-    let mut incorrect = 0;
+    let mut logic = RunningTest::new(test);
 
     let interrupt_error = io::Error::new(io::ErrorKind::Interrupted, "canceled");
 
@@ -152,28 +41,28 @@ fn run_test<'a>(test: &'a str) -> io::Result<TestResult<'a>> {
                 return Err(interrupt_error);
             }
             console::Key::Backspace => {
-                if i > 0 {
-                    i -= 1;
+                if logic.cursor > 0 {
                     term.move_cursor_left(1)?;
                     write!(
                         term,
                         "{}",
-                        test_style.apply_to(test.chars().nth(i).unwrap())
+                        test_style.apply_to(logic.expected[logic.cursor])
                     )?;
                     term.move_cursor_left(1)?;
                 }
+                logic.input(Instant::now(), Input::DeleteLetter);
             }
             console::Key::Char(c) => {
-                keys.push((Instant::now(), c));
-                if c == test.chars().nth(i).unwrap() {
-                    write!(term, "{}", correct_style.apply_to(c))?;
-                    correct += 1;
-                } else {
-                    write!(term, "{}", incorrect_style.apply_to(c))?;
-                    incorrect += 1;
+                let res = logic.input(Instant::now(), Input::Character(c));
+                match res.kind.unwrap() {
+                    InputKind::Correct => {
+                        write!(term, "{}", correct_style.apply_to(c))?;
+                    }
+                    InputKind::Incorrect => {
+                        write!(term, "{}", incorrect_style.apply_to(c))?;
+                    }
                 }
-                i += 1;
-                if i == test.len() {
+                if res.is_done {
                     break;
                 }
             }
@@ -183,12 +72,7 @@ fn run_test<'a>(test: &'a str) -> io::Result<TestResult<'a>> {
 
     write!(term, "\n\n")?;
 
-    Ok(TestResult {
-        test,
-        keys,
-        correct,
-        incorrect,
-    })
+    Ok(logic.into())
 }
 
 #[derive(Parser, Debug)]
@@ -230,7 +114,7 @@ fn main() -> io::Result<()> {
     let set_string = read_pipe();
     let set = set_string
         .split('\n')
-        .filter(|line| line.len() > 0)
+        .filter(|line| !line.is_empty())
         .collect_vec();
 
     if set.len() <= 1 {
@@ -243,7 +127,7 @@ fn main() -> io::Result<()> {
     match cli.generate {
         GeneratorArgs::Random { words } => loop {
             let mut all_results = Vec::<TestResult>::new();
-            let test = random(&mut rng, &set, words);
+            let test = generator::random(&mut rng, &set, words);
 
             run_test_with_requirement(&test, &cli, &mut all_results)?;
 
@@ -254,7 +138,7 @@ fn main() -> io::Result<()> {
             repetition,
         } => {
             let mut all_results = Vec::<TestResult>::new();
-            let permutations = permutate(&mut rng, set.clone(), combination, repetition);
+            let permutations = generator::permutate(&mut rng, set.clone(), combination, repetition);
             let len = permutations.len();
             for (i, test) in permutations.iter().enumerate() {
                 println!("{} / {}", i + 1, len);
@@ -268,20 +152,20 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
-fn run_test_with_requirement<'a, 'b>(
-    test: &'a String,
-    cli: &'b Args,
-    all_results: &mut Vec<TestResult<'a>>,
+fn run_test_with_requirement(
+    test: &str,
+    cli: &Args,
+    all_results: &mut Vec<TestResult>,
 ) -> Result<(), io::Error> {
     let mut result = run_test(test)?;
     print_result(&result);
-    while cli.min_wpm.map_or(false, |min| result.wpm() < min)
+    while cli.min_wpm.is_some_and(|min| result.wpm() < min)
         || cli
             .min_accuracy
-            .map_or(false, |min| result.accuracy() < min / 100.0)
+            .is_some_and(|min| result.accuracy() < min / 100.0)
         || cli
             .min_consistency
-            .map_or(false, |min| result.consistency() < min / 100.0)
+            .is_some_and(|min| result.consistency() < min / 100.0)
     {
         all_results.push(result);
         result = run_test(test)?;
@@ -295,7 +179,7 @@ fn kogasa(value: f64) -> f64 {
     100.0 * (1.0 - (value + value.powi(3) / 3.0 + value.powi(5) / 5.0).tanh())
 }
 
-fn print_final_result(all_results: Vec<TestResult<'_>>) {
+fn print_final_result(all_results: Vec<TestResult>) {
     println!("total tests: {}", all_results.len());
     println!(
         "average wpm: {:.2}",
