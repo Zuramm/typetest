@@ -83,7 +83,7 @@ impl Cursor {
     }
 }
 
-fn correct_input_naive(expected: &str, inputs: &[Input]) -> Vec<InputKind> {
+pub fn correct_input_naive(expected: &str, inputs: &[Input]) -> (Vec<InputKind>, usize, bool) {
     let mut cursor = Cursor::new();
     let chars = expected.chars().collect_vec();
     let mut kinds = Vec::<InputKind>::new();
@@ -111,11 +111,13 @@ fn correct_input_naive(expected: &str, inputs: &[Input]) -> Vec<InputKind> {
         }
     }
 
-    for _ in cursor.position()..expected.len() {
+    let position = cursor.position();
+
+    for _ in position..expected.len() {
         kinds.push(InputKind::Missed);
     }
 
-    kinds
+    (kinds, position, position == expected.len())
 }
 
 impl RunningTest {
@@ -294,8 +296,8 @@ mod tests {
             $(
                 #[test]
                 fn $name() {
-                    let (expected_text, inputs, expected_kinds) = $value;
-                    assert_eq!(expected_kinds, correct_input_naive(expected_text, &inputs));
+                    let (expected_text, inputs, expected_kinds, expected_cursor, expected_done) = $value;
+                    assert_eq!((expected_kinds, expected_cursor, expected_done), correct_input_naive(expected_text, &inputs));
                 }
             )*
             }
@@ -305,67 +307,89 @@ mod tests {
             empty_input: (
                 "hello",
                 inputs![],
-                correction![- - - - -]
+                correction![- - - - -],
+                0,
+                false
             ),
 
             correct_simple: (
                 "hello",
                 inputs!["hello"],
-                correction![h e l l o]
+                correction![h e l l o],
+                5,
+                true
             ),
 
             incorrect_simple: (
                 "hello",
                 inputs!["hxlyo"],
-                correction![h & l & o]
+                correction![h & l & o],
+                5,
+                true
             ),
 
             additional_simple: (
                 "hello",
                 inputs!["hellor"],
-                correction![h e l l o +]
+                correction![h e l l o +],
+                6,
+                false
             ),
 
             with_delete_letter: (
                 "hello",
                 inputs!["hx", delete_letter, "el"],
-                correction![h & e l - -]
+                correction![h & e l - -],
+                3,
+                false
             ),
 
             empty_input_with_delete_letter: (
                 "",
                 inputs![delete_letter],
-                correction![]
+                correction![],
+                0,
+                true
             ),
 
             with_delete_word: (
                 "hello world",
                 inputs!["hello wx", delete_word, "wo"],
-                correction![h e l l o _ w & w o - - -]
+                correction![h e l l o _ w & w o - - -],
+                8,
+                false
             ),
 
             empty_input_with_delete_word: (
                 "",
                 inputs![delete_word],
-                correction![]
+                correction![],
+                0,
+                true
             ),
 
             with_delete_word_with_double_space_before: (
                 "hello world",
                 inputs!["hello  w", delete_word, delete_letter, "wo"],
-                correction![h e l l o _ & & w o - - -]
+                correction![h e l l o _ & & w o - - -],
+                8,
+                false
             ),
 
             with_delete_word_with_double_space_after: (
                 "hello",
                 inputs!["hello  ", delete_word],
-                correction![h e l l o + + - - - - -]
+                correction![h e l l o + + - - - - -],
+                0,
+                false
             ),
 
             delete_word_from_beginning: (
                 "test word",
                 inputs!["tesx", delete_word, "test"],
-                correction![t e s & t e s t - - - - -]
+                correction![t e s & t e s t - - - - -],
+                4,
+                false
             ),
         }
     }
