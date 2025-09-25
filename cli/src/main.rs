@@ -124,15 +124,25 @@ fn main() -> io::Result<()> {
         ));
     }
 
+    let min_wpm = cli.min_wpm.unwrap_or(0.);
+    let min_accuracy = cli.min_accuracy.unwrap_or(0.);
+    let min_consistency = cli.min_consistency.unwrap_or(0.);
+
     match cli.generate {
-        GeneratorArgs::Random { words } => loop {
+        GeneratorArgs::Random { words } => {
             let mut all_results = Vec::<TestResult>::new();
             let test = generator::random(&mut rng, &set, words);
 
-            run_test_with_requirement(&test, &cli, &mut all_results)?;
+            run_test_with_requirement(
+                &test,
+                min_wpm,
+                min_accuracy,
+                min_consistency,
+                &mut all_results,
+            )?;
 
             print_final_result(all_results);
-        },
+        }
         GeneratorArgs::Permutation {
             combination,
             repetition,
@@ -142,7 +152,13 @@ fn main() -> io::Result<()> {
             let len = permutations.len();
             for (i, test) in permutations.iter().enumerate() {
                 println!("{} / {}", i + 1, len);
-                run_test_with_requirement(test, &cli, &mut all_results)?;
+                run_test_with_requirement(
+                    test,
+                    min_wpm,
+                    min_accuracy,
+                    min_consistency,
+                    &mut all_results,
+                )?;
             }
 
             print_final_result(all_results);
@@ -154,18 +170,16 @@ fn main() -> io::Result<()> {
 
 fn run_test_with_requirement(
     test: &str,
-    cli: &Args,
+    min_wpm: f64,
+    min_accuracy: f64,
+    min_consistency: f64,
     all_results: &mut Vec<TestResult>,
 ) -> Result<(), io::Error> {
     let mut result = run_test(test)?;
     print_result(&result);
-    while cli.min_wpm.is_some_and(|min| result.wpm() < min)
-        || cli
-            .min_accuracy
-            .is_some_and(|min| result.accuracy() < min / 100.0)
-        || cli
-            .min_consistency
-            .is_some_and(|min| result.consistency() < min / 100.0)
+    while result.wpm() < min_wpm
+        || result.accuracy() < min_accuracy / 100.0
+        || result.consistency() < min_consistency / 100.0
     {
         all_results.push(result);
         result = run_test(test)?;
