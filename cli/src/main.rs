@@ -46,7 +46,7 @@ fn run_test(test: &str) -> io::Result<TestResult> {
                     write!(
                         term,
                         "{}",
-                        test_style.apply_to(logic.expected[logic.cursor])
+                        test_style.apply_to(logic.expected[logic.cursor - 1])
                     )?;
                     term.move_cursor_left(1)?;
                 }
