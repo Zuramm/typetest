@@ -58,7 +58,7 @@ fn run_test(test: &str) -> io::Result<TestResult> {
                     InputKind::Correct => {
                         write!(term, "{}", correct_style.apply_to(c))?;
                     }
-                    InputKind::Incorrect => {
+                    _ => {
                         write!(term, "{}", incorrect_style.apply_to(c))?;
                     }
                 }

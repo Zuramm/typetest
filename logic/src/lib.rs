@@ -10,9 +10,12 @@ pub enum Input {
     DeleteWord,
 }
 
+#[derive(Debug, PartialEq)]
 pub enum InputKind {
     Correct,
     Incorrect,
+    Additional,
+    Missed,
 }
 
 pub struct InputResult {
@@ -26,6 +29,66 @@ pub struct RunningTest {
     inputs: Vec<(Instant, Input)>,
     correct: usize,
     incorrect: usize,
+}
+
+fn correct_input_naive(expected: &str, inputs: &[Input]) -> Vec<InputKind> {
+    let chars = expected.chars().collect_vec();
+    let mut cursor = 0usize;
+    let mut kinds = Vec::<InputKind>::new();
+    let mut spaces = Vec::<usize>::new();
+
+    println!("cursor: {cursor}");
+    for input in inputs {
+        match input {
+            Input::Character(c) => {
+                if let Some(expected_c) = chars.get(cursor) {
+                    if expected_c == c {
+                        kinds.push(InputKind::Correct);
+                    } else {
+                        kinds.push(InputKind::Incorrect);
+                    }
+                } else {
+                    kinds.push(InputKind::Additional);
+                }
+                if c.is_whitespace() {
+                    spaces.push(cursor);
+                }
+                cursor += 1;
+                println!("character {c}: {cursor}");
+            }
+            Input::DeleteLetter => {
+                if let Some(&last) = spaces.last() {
+                    if last == cursor {
+                        spaces.pop();
+                    }
+                }
+                if cursor > 0 {
+                    cursor -= 1;
+                }
+                println!("delete letter: {cursor}");
+            }
+            Input::DeleteWord => {
+                println!("spaces: {spaces:?}");
+                let mut word_start = 0;
+                while cursor > 0 {
+                    cursor -= 1;
+                    word_start = spaces.pop().map_or(0, |s| s + 1);
+                    println!("{word_start} < {cursor}");
+                    if word_start <= cursor {
+                        break;
+                    }
+                }
+                cursor = word_start;
+                println!("delete word: {cursor}");
+            }
+        }
+    }
+
+    for _ in cursor..expected.len() {
+        kinds.push(InputKind::Missed);
+    }
+
+    kinds
 }
 
 impl RunningTest {
@@ -145,5 +208,138 @@ impl TestResult {
             / (history.len() as f64);
 
         standard_deviation / mean
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    macro_rules! inputs {
+        (@single $c:literal) => {
+            inputs!(@literal $c)
+        };
+        (@single delete_letter) => { vec![Input::DeleteLetter] };
+        (@single delete_word) => { vec![Input::DeleteWord] };
+
+        (@literal $s:expr) => {{
+            let s: &str = $s;
+            s.chars().map(Input::Character).collect::<Vec<_>>()
+        }};
+
+        () => {
+            Vec::<Input>::new()
+        };
+
+        ($($input:tt),* $(,)?) => {{
+            let mut result = Vec::new();
+            $(
+                result.extend(inputs!(@single $input));
+            )*
+            result
+        }};
+    }
+
+    macro_rules! correction {
+        () => {
+            Vec::<InputKind>::new()
+        };
+
+        ($($symbol:tt)*) => {
+            vec![
+                $(
+                    match stringify!($symbol) {
+                        "&" => InputKind::Incorrect,
+                        "+" => InputKind::Additional,
+                        "-" => InputKind::Missed,
+                        _ => InputKind::Correct,
+                    }
+                ),*
+            ]
+        };
+    }
+
+    mod correct_input_naive {
+        use super::*;
+
+        macro_rules! test_cases  {
+            ($($name:ident: $value:expr,)*) => {
+            $(
+                #[test]
+                fn $name() {
+                    let (expected_text, inputs, expected_kinds) = $value;
+                    assert_eq!(expected_kinds, correct_input_naive(expected_text, &inputs));
+                }
+            )*
+            }
+        }
+
+        test_cases! {
+            empty_input: (
+                "hello",
+                inputs![],
+                correction![- - - - -]
+            ),
+
+            correct_simple: (
+                "hello",
+                inputs!["hello"],
+                correction![h e l l o]
+            ),
+
+            incorrect_simple: (
+                "hello",
+                inputs!["hxlyo"],
+                correction![h & l & o]
+            ),
+
+            additional_simple: (
+                "hello",
+                inputs!["hellor"],
+                correction![h e l l o +]
+            ),
+
+            with_delete_letter: (
+                "hello",
+                inputs!["hx", delete_letter, "el"],
+                correction![h & e l - -]
+            ),
+
+            empty_input_with_delete_letter: (
+                "",
+                inputs![delete_letter],
+                correction![]
+            ),
+
+            with_delete_word: (
+                "hello world",
+                inputs!["hello wx", delete_word, "wo"],
+                correction![h e l l o _ w & w o - - -]
+            ),
+
+            empty_input_with_delete_word: (
+                "",
+                inputs![delete_word],
+                correction![]
+            ),
+
+            with_delete_word_with_double_space_before: (
+                "hello world",
+                inputs!["hello  w", delete_word, delete_letter, "wo"],
+                correction![h e l l o _ & & w o - - -]
+            ),
+
+            with_delete_word_with_double_space_after: (
+                "hello",
+                inputs!["hello  ", delete_word],
+                correction![h e l l o + + - - - - -]
+            ),
+
+            delete_word_from_beginning: (
+                "test word",
+                inputs!["tesx", delete_word, "test"],
+                correction![t e s & t e s t - - - - -]
+            ),
+        }
     }
 }
