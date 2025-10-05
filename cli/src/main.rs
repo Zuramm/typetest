@@ -4,7 +4,7 @@ use std::time::Instant;
 use clap::{command, Parser, Subcommand};
 use console::{Style, Term};
 use itertools::Itertools;
-use logic::{generator, Input, InputKind, RunningTest, TestResult};
+use logic::{correct_input_naive, generator, output_text, Input, InputKind, InputText};
 
 fn read_pipe() -> String {
     let stdin = io::stdin();
@@ -22,6 +22,24 @@ fn read_pipe() -> String {
     line
 }
 
+#[derive(Default)]
+struct TestResult {
+    timestamps: Vec<Instant>,
+    inputs: Vec<Input>,
+}
+
+impl TestResult {
+    fn character(&mut self, c: char) {
+        self.timestamps.push(Instant::now());
+        self.inputs.push(Input::Character(c));
+    }
+
+    fn delete_letter(&mut self) {
+        self.timestamps.push(Instant::now());
+        self.inputs.push(Input::DeleteLetter);
+    }
+}
+
 fn run_test(test: &str) -> io::Result<TestResult> {
     let test_style = Style::new().magenta();
     let correct_style = Style::new();
@@ -31,48 +49,54 @@ fn run_test(test: &str) -> io::Result<TestResult> {
     write!(term, "{}", test_style.apply_to(test))?;
     term.move_cursor_left(test.len())?;
 
-    let mut logic = RunningTest::new(test);
+    let mut cursor = 0;
+    let mut result = TestResult::default();
 
     let interrupt_error = io::Error::new(io::ErrorKind::Interrupted, "canceled");
 
     loop {
+        let mut result_changed = false;
         match term.read_key()? {
             console::Key::Escape | console::Key::CtrlC => {
                 return Err(interrupt_error);
             }
             console::Key::Backspace => {
-                if logic.cursor > 0 {
-                    term.move_cursor_left(1)?;
-                    write!(
-                        term,
-                        "{}",
-                        test_style.apply_to(logic.expected[logic.cursor - 1])
-                    )?;
-                    term.move_cursor_left(1)?;
-                }
-                logic.input(Instant::now(), Input::DeleteLetter);
+                result.delete_letter();
+                result_changed = true;
             }
             console::Key::Char(c) => {
-                let res = logic.input(Instant::now(), Input::Character(c));
-                match res.kind.unwrap() {
-                    InputKind::Correct => {
-                        write!(term, "{}", correct_style.apply_to(c))?;
-                    }
-                    _ => {
-                        write!(term, "{}", incorrect_style.apply_to(c))?;
-                    }
-                }
-                if res.is_done {
-                    break;
-                }
+                result.character(c);
+                result_changed = true;
             }
             _ => {}
+        }
+        if result_changed {
+            let (positions, corrections, typed, is_done) =
+                correct_input_naive(test, &result.inputs);
+            term.move_cursor_left(cursor);
+            for (kind, text) in output_text(&positions, &corrections, &typed) {
+                let style = match kind {
+                    InputKind::Correct => &correct_style,
+                    InputKind::Incorrect => &incorrect_style,
+                    InputKind::Additional => &incorrect_style,
+                    InputKind::Missed => &test_style,
+                };
+                write!(term, "{}", style.apply_to(text));
+            }
+            if typed.len() < cursor {
+                write!(term, "{}", test_style.apply_to(&test[typed.len()..cursor]));
+                term.move_cursor_left(cursor - typed.len());
+            }
+            cursor = typed.len();
+            if is_done {
+                break;
+            }
         }
     }
 
     write!(term, "\n\n")?;
 
-    Ok(logic.into())
+    Ok(result)
 }
 
 #[derive(Parser, Debug)]
