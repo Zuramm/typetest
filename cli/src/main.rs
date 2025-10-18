@@ -5,8 +5,8 @@ use clap::{command, Parser, Subcommand};
 use console::{Style, Term};
 use itertools::Itertools;
 use logic::{
-    consistency_by_second, correct_input_naive, generator, output_text, wpm_from_timestamps, Input,
-    InputErrorCounts, InputKind,
+    consistency_by_second, correct_input_naive, correct_input_words, generator, output_text,
+    wpm_from_timestamps, Input, InputErrorCounts, InputKind,
 };
 
 fn read_pipe() -> String {
@@ -89,7 +89,7 @@ fn run_test(test: &str) -> io::Result<TestResult> {
         }
         if result_changed {
             let (positions, corrections, typed, is_done) =
-                correct_input_naive(test, &result.inputs);
+                correct_input_words(test, &result.inputs);
             term.move_cursor_left(cursor)?;
             for (kind, text) in output_text(&positions, &corrections, &typed) {
                 let style = match kind {

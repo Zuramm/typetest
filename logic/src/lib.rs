@@ -158,6 +158,76 @@ pub fn correct_input_naive(
     (positions, kinds, text.into(), position == expected.len())
 }
 
+pub fn correct_input_words(
+    expected: &str,
+    inputs: &[Input],
+) -> (Vec<usize>, Vec<InputKind>, String, bool) {
+    let mut text = InputText::default();
+    let chars = expected.chars().collect_vec();
+    let mut positions = Vec::<usize>::new();
+    let mut kinds = Vec::<InputKind>::new();
+
+    for input in inputs {
+        match input {
+            Input::Character(c) => {
+                positions.push(text.cursor());
+                if let Some(expected_c) = chars.get(text.cursor()) {
+                    if expected_c == c {
+                        kinds.push(InputKind::Correct);
+                    } else if !expected_c.is_whitespace() && c.is_whitespace() {
+                        while chars
+                            .get(text.cursor() + 1)
+                            .is_some_and(|c1| !c1.is_whitespace())
+                        {
+                            text.character(' ');
+                            positions.push(text.cursor());
+                            kinds.push(InputKind::Missed);
+                        }
+                        while chars
+                            .get(text.cursor() + 1)
+                            .is_some_and(|c1| c1.is_whitespace())
+                        {
+                            text.character(' ');
+                            positions.push(text.cursor());
+                            kinds.push(InputKind::Missed);
+                        }
+                        if let Some(expected_c) = chars.get(text.cursor()) {
+                            if expected_c == c {
+                                kinds.push(InputKind::Correct);
+                            } else {
+                                kinds.push(InputKind::Incorrect);
+                            }
+                        }
+                    } else {
+                        kinds.push(InputKind::Incorrect);
+                    }
+                } else {
+                    kinds.push(InputKind::Additional);
+                }
+                text.character(*c);
+                if text.cursor() == chars.len() {
+                    break;
+                }
+            }
+            Input::DeleteLetter => {
+                text.delete_letter();
+            }
+            Input::DeleteWord => {
+                text.delete_word();
+            }
+        }
+    }
+
+    let position = text.cursor();
+
+    for p in position..expected.len() {
+        positions.push(p);
+        kinds.push(InputKind::Missed);
+    }
+
+    (positions, kinds, text.into(), position == expected.len())
+}
+
 pub fn output_text<'a>(
     positions: &[usize],
     corrections: &[InputKind],
@@ -497,6 +567,107 @@ mod tests {
                 correction![t e s & t e s t - - - - -],
                 "test",
                 false
+            ),
+        }
+    }
+
+    mod correct_input_words {
+        use super::*;
+
+        macro_rules! test_cases  {
+            ($($name:ident: $value:expr,)*) => {
+            $(
+                #[test]
+                fn $name() {
+                    let (expected_text, inputs, expected_kinds, expected_output, expected_done): (&str, Vec<Input>, Vec<InputKind>, &str, bool) = $value;
+                    let (_, kinds, output, is_done) = correct_input_words(expected_text, &inputs);
+                    assert_eq!(expected_kinds, kinds);
+                    assert_eq!(expected_output, &output);
+                    assert_eq!(expected_done, is_done);
+                }
+            )*
+            }
+        }
+
+        test_cases! {
+            empty_input: (
+                "hello",
+                inputs![],
+                correction![- - - - -],
+                "",
+                false
+            ),
+
+            correct_simple: (
+                "hello",
+                inputs!["hello"],
+                correction![h e l l o],
+                "hello",
+                true
+            ),
+
+            incorrect_simple: (
+                "hello",
+                inputs!["hxlyo"],
+                correction![h & l & o],
+                "hxlyo",
+                true
+            ),
+
+            additional_simple: (
+                "hello",
+                inputs!["hellor"],
+                correction![h e l l o +],
+                "hellor",
+                false
+            ),
+
+            with_delete_letter: (
+                "hello",
+                inputs!["hx", delete_letter, "el"],
+                correction![h & e l - -],
+                "hel",
+                false
+            ),
+
+            empty_input_with_delete_letter: (
+                "",
+                inputs![delete_letter],
+                correction![],
+                "",
+                true
+            ),
+
+            with_delete_word: (
+                "hello world",
+                inputs!["hello wx", delete_word, "wo"],
+                correction![h e l l o _ w & w o - - -],
+                "hello wo",
+                false
+            ),
+
+            empty_input_with_delete_word: (
+                "",
+                inputs![delete_word],
+                correction![],
+                "",
+                true
+            ),
+
+            delete_word_from_beginning: (
+                "test word",
+                inputs!["tesx", delete_word, "test"],
+                correction![t e s & t e s t - - - - -],
+                "test",
+                false
+            ),
+
+            skip_word_with_space: (
+                "one two",
+                inputs!["on two"],
+                correction![o n - _ t w o],
+                "on two",
+                true,
             ),
         }
     }
