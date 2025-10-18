@@ -169,7 +169,9 @@ pub fn output_text<'a>(
     errors.resize(typed.len(), InputKind::Missed);
 
     for (&position, &correction) in positions.iter().zip(corrections.iter()) {
-        errors[position] = correction;
+        if position < errors.len() {
+            errors[position] = correction;
+        }
     }
 
     let mut output = Vec::<(InputKind, &str)>::new();
@@ -184,6 +186,10 @@ pub fn output_text<'a>(
             group_kind = kind;
             group_start = position;
         }
+    }
+
+    if group_start < typed.len() {
+        output.push((group_kind, &typed[group_start..]));
     }
 
     output

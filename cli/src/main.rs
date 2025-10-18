@@ -4,7 +4,10 @@ use std::time::Instant;
 use clap::{command, Parser, Subcommand};
 use console::{Style, Term};
 use itertools::Itertools;
-use logic::{correct_input_naive, generator, output_text, Input, InputKind, InputText};
+use logic::{
+    consistency_by_second, correct_input_naive, generator, output_text, wpm_from_timestamps, Input,
+    InputErrorCounts, InputKind,
+};
 
 fn read_pipe() -> String {
     let stdin = io::stdin();
@@ -37,6 +40,20 @@ impl TestResult {
     fn delete_letter(&mut self) {
         self.timestamps.push(Instant::now());
         self.inputs.push(Input::DeleteLetter);
+    }
+
+    fn wpm(&self) -> f64 {
+        wpm_from_timestamps(&self.timestamps)
+    }
+
+    fn accuracy(&self, expected: &str) -> f64 {
+        let (_, kinds, _, _) = correct_input_naive(expected, &self.inputs);
+        let counts = InputErrorCounts::from(kinds.as_slice());
+        counts.accuracy()
+    }
+
+    fn consistency(&self) -> f64 {
+        consistency_by_second(&self.timestamps)
     }
 }
 
@@ -73,7 +90,7 @@ fn run_test(test: &str) -> io::Result<TestResult> {
         if result_changed {
             let (positions, corrections, typed, is_done) =
                 correct_input_naive(test, &result.inputs);
-            term.move_cursor_left(cursor);
+            term.move_cursor_left(cursor)?;
             for (kind, text) in output_text(&positions, &corrections, &typed) {
                 let style = match kind {
                     InputKind::Correct => &correct_style,
@@ -81,11 +98,11 @@ fn run_test(test: &str) -> io::Result<TestResult> {
                     InputKind::Additional => &incorrect_style,
                     InputKind::Missed => &test_style,
                 };
-                write!(term, "{}", style.apply_to(text));
+                write!(term, "{}", style.apply_to(text))?;
             }
             if typed.len() < cursor {
-                write!(term, "{}", test_style.apply_to(&test[typed.len()..cursor]));
-                term.move_cursor_left(cursor - typed.len());
+                write!(term, "{}", test_style.apply_to(&test[typed.len()..cursor]))?;
+                term.move_cursor_left(cursor - typed.len())?;
             }
             cursor = typed.len();
             if is_done {
@@ -154,7 +171,7 @@ fn main() -> io::Result<()> {
 
     match cli.generate {
         GeneratorArgs::Random { words } => {
-            let mut all_results = Vec::<TestResult>::new();
+            let mut all_results = Vec::<(TestResult, String)>::new();
             let test = generator::random(&mut rng, &set, words);
 
             run_test_with_requirement(
@@ -171,7 +188,7 @@ fn main() -> io::Result<()> {
             combination,
             repetition,
         } => {
-            let mut all_results = Vec::<TestResult>::new();
+            let mut all_results = Vec::<(TestResult, String)>::new();
             let permutations = generator::permutate(&mut rng, set.clone(), combination, repetition);
             let len = permutations.len();
             for (i, test) in permutations.iter().enumerate() {
@@ -197,19 +214,19 @@ fn run_test_with_requirement(
     min_wpm: f64,
     min_accuracy: f64,
     min_consistency: f64,
-    all_results: &mut Vec<TestResult>,
+    all_results: &mut Vec<(TestResult, String)>,
 ) -> Result<(), io::Error> {
     let mut result = run_test(test)?;
-    print_result(&result);
+    print_result(&result, test);
     while result.wpm() < min_wpm
-        || result.accuracy() < min_accuracy / 100.0
+        || result.accuracy(test) < min_accuracy / 100.0
         || result.consistency() < min_consistency / 100.0
     {
-        all_results.push(result);
+        all_results.push((result, test.to_string()));
         result = run_test(test)?;
-        print_result(&result);
+        print_result(&result, test);
     }
-    all_results.push(result);
+    all_results.push((result, test.to_string()));
     Ok(())
 }
 
@@ -217,17 +234,21 @@ fn kogasa(value: f64) -> f64 {
     100.0 * (1.0 - (value + value.powi(3) / 3.0 + value.powi(5) / 5.0).tanh())
 }
 
-fn print_final_result(all_results: Vec<TestResult>) {
+fn print_final_result(all_results: Vec<(TestResult, String)>) {
     println!("total tests: {}", all_results.len());
     println!(
         "average wpm: {:.2}",
-        all_results.iter().map(|result| result.wpm()).sum::<f64>() / all_results.len() as f64
+        all_results
+            .iter()
+            .map(|(result, _)| result.wpm())
+            .sum::<f64>()
+            / all_results.len() as f64
     );
     println!(
         "average accuracy: {:.2}%",
         all_results
             .iter()
-            .map(|result| result.accuracy())
+            .map(|(result, test)| result.accuracy(test))
             .sum::<f64>()
             * 100.0
             / all_results.len() as f64
@@ -236,15 +257,15 @@ fn print_final_result(all_results: Vec<TestResult>) {
         "average consistency: {:.2}%",
         all_results
             .iter()
-            .map(|result| kogasa(result.consistency()))
+            .map(|(result, _)| kogasa(result.consistency()))
             .sum::<f64>()
             / all_results.len() as f64
     );
 }
 
-fn print_result(result: &TestResult) {
+fn print_result(result: &TestResult, expected: &str) {
     println!("wpm: {:.2}", result.wpm());
-    println!("accuracy: {:.2}%", result.accuracy() * 100.0);
+    println!("accuracy: {:.2}%", result.accuracy(expected) * 100.0);
     println!("consistency: {:.2}%", kogasa(result.consistency()));
     println!();
 }
